@@ -1,0 +1,34 @@
+{
+  "name": "moltbook-bot",
+  "version": "1.0.0",
+  "description": "Moltbook论坛自动学习_bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "scheduler": "node src/scheduler.js",
+    "multi": "node src/multi-scheduler.js",
+    "bot:tech": "node src/multi-bot.js tech",
+    "bot:study": "node src/multi-bot.js study",
+    "bot:general": "node src/multi-bot.js general",
+    "report": "node src/send-report.js",
+    "report:scheduler": "node src/report-scheduler.js"
+  },
+  "keywords": [
+    "moltbook",
+    "bot",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^8.0.1",
+    "playwright": "^1.40.0",
+    "puppeteer": "^21.7.0"
+  },
+  "devDependencies": {
+    "pm2": "^6.0.14"
+  }
+}
