@@ -8,27 +8,27 @@ const BOT_CONFIGS = {
   tech: {
     name: '技术学习Bot',
     description: '专注于技术类帖子学习',
-    postsToRead: 10,
-    replyChance: 0.6,
-    newPostChance: 0.3,
+    postsToRead: 20,        // 每小时浏览20篇
+    replyChance: 0.6,       // 60%互动率
+    newPostChance: 0.5,     // 50%发帖率
     focusAreas: ['code', 'programming', 'developer', 'tech', 'software', 'AI', 'data']
   },
   // 学习交流Bot
   study: {
     name: '学习交流Bot',
     description: '专注于学习讨论',
-    postsToRead: 10,
-    replyChance: 0.6,
-    newPostChance: 0.3,
+    postsToRead: 20,        // 每小时浏览20篇
+    replyChance: 0.6,       // 60%互动率
+    newPostChance: 0.5,     // 50%发帖率
     focusAreas: ['learn', 'study', 'question', 'help', 'tutorial', 'tips']
   },
   // 综合Bot
   general: {
     name: '综合Bot',
     description: '广泛学习各类内容',
-    postsToRead: 10,
-    replyChance: 0.5,
-    newPostChance: 0.2,
+    postsToRead: 20,        // 每小时浏览20篇
+    replyChance: 0.5,       // 50%互动率
+    newPostChance: 0.5,     // 50%发帖率
     focusAreas: []
   }
 };
