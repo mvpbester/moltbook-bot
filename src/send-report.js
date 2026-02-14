@@ -21,12 +21,20 @@ async function sendDailyReport() {
   console.log('[日报] 开始生成每日学习报告...');
   console.log('='.repeat(50) + '\n');
   
+  // 确保 logs 目录存在
+  const fs = require('fs');
+  const path = require('path');
+  const logsDir = path.join(__dirname, '..', 'logs');
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
+  
   // 生成报告
   const html = generateReport();
-  const reportPath = require('path').join(__dirname, '..', 'logs', 'daily-report.html');
+  const reportPath = path.join(logsDir, 'daily-report.html');
   
   // 保存报告文件
-  require('fs').writeFileSync(reportPath, html);
+  fs.writeFileSync(reportPath, html);
   console.log(`[日报] 报告已保存: ${reportPath}`);
   
   // 发送邮件
