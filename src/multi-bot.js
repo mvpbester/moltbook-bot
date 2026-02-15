@@ -84,19 +84,30 @@ class SmartBot {
 
   // 智能筛选相关帖子
   async getRelevantPosts() {
-    const postLinks = await this.page.evaluate(() => {
+    const baseUrl = process.env.MOLTBOOK_URL || 'http://moltbook.com';
+    
+    const postLinks = await this.page.evaluate((base) => {
       const allLinks = Array.from(document.querySelectorAll('a[href]'));
       return allLinks
-        .map(link => link.getAttribute('href'))
-        .filter(href => href && href.includes('/post/'))
+        .map(link => {
+          const href = link.getAttribute('href');
+          // 确保返回完整URL
+          if (href && href.includes('/post/')) {
+            return href.startsWith('http') ? href : base + href;
+          }
+          return null;
+        })
+        .filter(href => href)
         .slice(0, 30);
-    });
+    }, baseUrl);
+    
+    // 去重
+    const uniqueLinks = [...new Set(postLinks)];
     
     // 如果有专注领域，优先选择相关的
     if (this.config.focusAreas && this.config.focusAreas.length > 0) {
-      // 访问几个帖子检查内容
       const relevantPosts = [];
-      for (const url of postLinks.slice(0, 10)) {
+      for (const url of uniqueLinks.slice(0, 10)) {
         try {
           await this.page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
           await this.page.waitForTimeout(500);
@@ -116,15 +127,14 @@ class SmartBot {
           }
           
           // 返回首页继续
-          await this.page.goto(process.env.MOLTBOOK_URL || 'http://moltbook.com', { waitUntil: 'networkidle' });
+          await this.page.goto(baseUrl, { waitUntil: 'networkidle' });
         } catch (e) {}
       }
       
-      // 如果找到相关帖子，返回它们；否则返回全部
-      return relevantPosts.length > 0 ? relevantPosts : postLinks.slice(0, this.config.postsToRead);
+      return relevantPosts.length > 0 ? relevantPosts : uniqueLinks.slice(0, this.config.postsToRead);
     }
     
-    return postLinks.slice(0, this.config.postsToRead);
+    return uniqueLinks.slice(0, this.config.postsToRead);
   }
 
   // 创建帖子
@@ -132,12 +142,13 @@ class SmartBot {
     try {
       console.log(`[${this.config.name}] 尝试发帖...`);
       
-      await this.page.goto((process.env.MOLTBOOK_URL || 'http://moltbook.com') + '/post/create', { 
+      const baseUrl = process.env.MOLTBOOK_URL || 'http://moltbook.com';
+      await this.page.goto(baseUrl + '/post/create', { 
         waitUntil: 'networkidle',
         timeout: 15000 
       });
       
-      await this.page.waitForTimeout(1000);
+      await this.page.waitForTimeout(1500);
       
       // 根据Bot类型生成不同主题
       const topics = {
@@ -157,19 +168,78 @@ class SmartBot {
       ];
       const content = contents[Math.floor(Math.random() * contents.length)];
       
-      // 填写表单
-      const titleInput = await this.page.$('input[name="title"], input[placeholder*="标题"], input[type="text"]');
-      const contentInput = await this.page.$('textarea[name="content"], textarea[placeholder*="内容"], textarea');
+      // 填写表单 - 尝试多种选择器
+      const titleSelectors = [
+        'input[name="title"]',
+        'input[placeholder*="标题"]',
+        'input[placeholder*="title"]',
+        'input[type="text"]',
+        'textarea[name="title"]',
+        '[contenteditable="true"]'
+      ];
+      
+      const contentSelectors = [
+        'textarea[name="content"]',
+        'textarea[placeholder*="内容"]',
+        'textarea[placeholder*="content"]',
+        'textarea',
+        'input[name="content"]',
+        '[contenteditable="true"]'
+      ];
+      
+      let titleInput = null;
+      let contentInput = null;
+      
+      // 尝试找到标题输入框
+      for (const selector of titleSelectors) {
+        titleInput = await this.page.$(selector);
+        if (titleInput) {
+          console.log(`[${this.config.name}] 找到标题输入框: ${selector}`);
+          break;
+        }
+      }
+      
+      // 尝试找到内容输入框
+      for (const selector of contentSelectors) {
+        contentInput = await this.page.$(selector);
+        if (contentInput) {
+          console.log(`[${this.config.name}] 找到内容输入框: ${selector}`);
+          break;
+        }
+      }
       
       if (titleInput && contentInput) {
         await titleInput.fill(title);
         await contentInput.fill(content);
         
-        // 提交
-        const submitBtn = await this.page.$('button[type="submit"], button:has-text("发布"), button:has-text("提交")');
+        await this.page.waitForTimeout(500);
+        
+        // 提交 - 尝试多种按钮选择器
+        const submitSelectors = [
+          'button[type="submit"]',
+          'button:has-text("发布")',
+          'button:has-text("提交")',
+          'button:has-text("Post")',
+          'button:has-text("Submit")',
+          'input[type="submit"]',
+          'button[class*="submit"]',
+          'button[class*="post"]',
+          'button'
+        ];
+        
+        let submitBtn = null;
+        for (const selector of submitSelectors) {
+          const btn = await this.page.$(selector);
+          if (btn) {
+            const btnText = await btn.evaluate(el => el.textContent);
+            console.log(`[${this.config.name}] 找到按钮: ${selector} - ${btnText}`);
+            if (!submitBtn) submitBtn = btn;
+          }
+        }
+        
         if (submitBtn) {
           await submitBtn.click();
-          await this.page.waitForTimeout(2000);
+          await this.page.waitForTimeout(3000);
           
           // 记录成功
           const currentUrl = this.page.url();
@@ -177,11 +247,18 @@ class SmartBot {
             log(this.config.name, `[POST] 发帖成功: ${currentUrl}`);
             console.log(`[${this.config.name}] 发帖成功: ${currentUrl}`);
             return currentUrl;
+          } else {
+            console.log(`[${this.config.name}] 发帖后URL: ${currentUrl}`);
           }
+        } else {
+          console.log(`[${this.config.name}] 未找到提交按钮`);
         }
+      } else {
+        console.log(`[${this.config.name}] 未找到表单: title=${!!titleInput}, content=${!!contentInput}`);
+        // 截图调试
+        await this.page.screenshot({ path: `debug-post-${Date.now()}.png` });
       }
       
-      console.log(`[${this.config.name}] 未找到发帖表单`);
       return null;
     } catch (error) {
       console.error(`[${this.config.name}] 发帖失败:`, error.message);
