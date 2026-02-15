@@ -1,6 +1,37 @@
 require('dotenv').config();
 const { chromium } = require('playwright');
 const { log } = require('./logger');
+const fs = require('fs');
+const path = require('path');
+
+// Cookie 存储路径
+const COOKIE_FILE = path.join(__dirname, '..', 'cookies.json');
+
+// 保存 cookies
+async function saveCookies(context) {
+  try {
+    const cookies = await context.cookies();
+    fs.writeFileSync(COOKIE_FILE, JSON.stringify(cookies, null, 2));
+    console.log('[Cookie] 登录状态已保存');
+  } catch (e) {
+    console.error('[Cookie] 保存失败:', e.message);
+  }
+}
+
+// 加载 cookies
+async function loadCookies(context) {
+  try {
+    if (fs.existsSync(COOKIE_FILE)) {
+      const cookies = JSON.parse(fs.readFileSync(COOKIE_FILE, 'utf-8'));
+      await context.addCookies(cookies);
+      console.log('[Cookie] 登录状态已加载');
+      return true;
+    }
+  } catch (e) {
+    console.error('[Cookie] 加载失败:', e.message);
+  }
+  return false;
+}
 
 // Bot 配置模板
 const BOT_CONFIGS = {
@@ -50,30 +81,64 @@ class SmartBot {
     this.context = await this.browser.newContext({
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
     });
+    
+    // 加载已保存的登录状态
+    const hasCookies = await loadCookies(this.context);
+    
     this.page = await this.context.newPage();
     console.log(`[${this.config.name}] 浏览器启动成功`);
+    return hasCookies;
   }
 
-  async login() {
+  async login(hasCookies) {
     try {
       const url = process.env.MOLTBOOK_URL || 'http://moltbook.com';
-      await this.page.goto(url + '/login', { waitUntil: 'networkidle', timeout: 30000 });
       
-      const usernameInput = await this.page.$('input[name="username"], input[name="email"], input[type="text"]');
-      const passwordInput = await this.page.$('input[name="password"], input[type="password"]');
-
-      if (usernameInput && passwordInput) {
-        await usernameInput.fill(process.env.MOLTBOOK_USERNAME);
-        await passwordInput.fill(process.env.MOLTBOOK_PASSWORD);
+      // 如果有 cookies，先检查是否已登录
+      if (hasCookies) {
+        await this.page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
+        await this.page.waitForTimeout(1000);
         
-        const submitButton = await this.page.$('button[type="submit"], button:has-text("Login")');
-        if (submitButton) {
-          await submitButton.click();
-          await this.page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
+        // 检查是否已登录（看是否有用户相关元素）
+        const userElement = await this.page.$('a[href*="dashboard"], button:has-text("New"), [data-testid="user-menu"]');
+        if (userElement) {
+          console.log(`[${this.config.name}] 使用已保存的登录状态`);
+          return true;
         }
+        console.log(`[${this.config.name}] Cookie 已过期，需要重新登录`);
       }
       
-      await this.page.goto(process.env.MOLTBOOK_URL || 'http://moltbook.com', { waitUntil: 'networkidle' });
+      // 需要重新登录 - 使用邮件魔法链接
+      console.log(`[${this.config.name}] 需要登录，请手动操作...`);
+      console.log(`[${this.config.name}] 访问: ${url}/login`);
+      console.log(`[${this.config.name}] 邮箱: ${process.env.MOLTBOOK_USERNAME}`);
+      
+      await this.page.goto(url + '/login', { waitUntil: 'networkidle', timeout: 30000 });
+      await this.page.waitForTimeout(2000);
+      
+      // 填写邮箱
+      const emailInput = await this.page.$('input[type="email"], input[placeholder*="email"]');
+      if (emailInput) {
+        await emailInput.fill(process.env.MOLTBOOK_USERNAME);
+        console.log(`[${this.config.name}] 已填写邮箱，等待手动点击登录链接...`);
+        
+        // 暂停等待用户手动完成登录
+        console.log(`[${this.config.name}] ⚠️ 请手动点击邮件中的登录链接，然后按回车继续...`);
+        
+        // 非交互模式下，跳过登录
+        if (process.env.HEADLESS !== 'false') {
+          console.log(`[${this.config.name}] 无头模式跳过登录`);
+          return false;
+        }
+        
+        // 等待一段时间看是否已登录
+        await this.page.waitForTimeout(30000); // 等待30秒
+      }
+      
+      // 尝试保存登录状态
+      await saveCookies(this.context);
+      
+      await this.page.goto(url, { waitUntil: 'networkidle' });
       console.log(`[${this.config.name}] 登录成功`);
       return true;
     } catch (error) {
@@ -143,12 +208,35 @@ class SmartBot {
       console.log(`[${this.config.name}] 尝试发帖...`);
       
       const baseUrl = process.env.MOLTBOOK_URL || 'http://moltbook.com';
-      await this.page.goto(baseUrl + '/post/create', { 
+      const postUrl = baseUrl + '/post/create';
+      console.log(`[${this.config.name}] 访问发帖页面: ${postUrl}`);
+      
+      await this.page.goto(postUrl, { 
         waitUntil: 'networkidle',
         timeout: 15000 
       });
       
-      await this.page.waitForTimeout(1500);
+      // 等待更长时间确保页面加载
+      await this.page.waitForTimeout(3000);
+      
+      // 检查当前URL
+      const currentUrl = this.page.url();
+      console.log(`[${this.config.name}] 当前页面URL: ${currentUrl}`);
+      
+      // 如果URL变了，说明可能被重定向了
+      if (!currentUrl.includes('/post/create')) {
+        console.log(`[${this.config.name}] 被重定向，尝试寻找发帖按钮...`);
+        // 尝试点击发帖按钮
+        const newPostBtn = await this.page.$('a[href*="post/create"], button:has-text("New"), button:has-text("发帖"), button:has-text("发布")');
+        if (newPostBtn) {
+          await newPostBtn.click();
+          await this.page.waitForTimeout(3000);
+        }
+      }
+      
+      // 截图调试
+      await this.page.screenshot({ path: `debug-post-${Date.now()}.png` });
+      console.log(`[${this.config.name}] 已截图保存`);
       
       // 根据Bot类型生成不同主题
       const topics = {
@@ -168,44 +256,57 @@ class SmartBot {
       ];
       const content = contents[Math.floor(Math.random() * contents.length)];
       
-      // 填写表单 - 尝试多种选择器
-      const titleSelectors = [
-        'input[name="title"]',
-        'input[placeholder*="标题"]',
-        'input[placeholder*="title"]',
-        'input[type="text"]',
-        'textarea[name="title"]',
-        '[contenteditable="true"]'
-      ];
-      
-      const contentSelectors = [
-        'textarea[name="content"]',
-        'textarea[placeholder*="内容"]',
-        'textarea[placeholder*="content"]',
-        'textarea',
-        'input[name="content"]',
-        '[contenteditable="true"]'
-      ];
+      // 获取页面所有可能的输入元素
+      const inputs = await this.page.$$('input[type="text"], input:not([type]), textarea, [contenteditable="true"]');
+      console.log(`[${this.config.name}] 找到 ${inputs.length} 个输入元素`);
       
       let titleInput = null;
       let contentInput = null;
       
-      // 尝试找到标题输入框
-      for (const selector of titleSelectors) {
-        titleInput = await this.page.$(selector);
-        if (titleInput) {
-          console.log(`[${this.config.name}] 找到标题输入框: ${selector}`);
-          break;
+      // 分析每个输入元素
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const tagName = await input.evaluate(el => el.tagName.toLowerCase());
+        const inputType = await input.evaluate(el => el.type || 'text');
+        const name = await input.evaluate(el => el.name || '');
+        const placeholder = await input.evaluate(el => el.placeholder || '');
+        const contenteditable = await input.evaluate(el => el.contentEditable);
+        
+        console.log(`[${this.config.name}] 输入元素 ${i}: tag=${tagName}, type=${inputType}, name=${name}, placeholder=${placeholder}, contenteditable=${contenteditable}`);
+        
+        // 判断是否为标题输入框
+        if (!titleInput && (
+          name.toLowerCase().includes('title') ||
+          placeholder.toLowerCase().includes('title') ||
+          placeholder.includes('标题') ||
+          (i === 0 && tagName === 'input') // 第一个input通常是标题
+        )) {
+          titleInput = input;
+          console.log(`[${this.config.name}] → 识别为标题输入框`);
+        }
+        // 判断是否为内容输入框
+        else if (!contentInput && (
+          name.toLowerCase().includes('content') ||
+          name.toLowerCase().includes('body') ||
+          placeholder.toLowerCase().includes('content') ||
+          placeholder.includes('内容') ||
+          placeholder.includes('正文') ||
+          tagName === 'textarea' ||
+          contenteditable === 'true'
+        )) {
+          contentInput = input;
+          console.log(`[${this.config.name}] → 识别为内容输入框`);
         }
       }
       
-      // 尝试找到内容输入框
-      for (const selector of contentSelectors) {
-        contentInput = await this.page.$(selector);
-        if (contentInput) {
-          console.log(`[${this.config.name}] 找到内容输入框: ${selector}`);
-          break;
-        }
+      // 如果还没找到，使用位置判断（第一个input是标题，第二个textarea或contenteditable是内容）
+      if (!titleInput && inputs.length > 0) {
+        titleInput = inputs[0];
+        console.log(`[${this.config.name}] 使用第一个输入元素作为标题`);
+      }
+      if (!contentInput && inputs.length > 1) {
+        contentInput = inputs[1];
+        console.log(`[${this.config.name}] 使用第二个输入元素作为内容`);
       }
       
       if (titleInput && contentInput) {
@@ -294,10 +395,12 @@ class SmartBot {
 
   async run() {
     try {
-      await this.init();
-      const loginSuccess = await this.login();
+      const hasCookies = await this.init();
+      const loginSuccess = await this.login(hasCookies);
       
       if (loginSuccess) {
+        // 登录成功后保存 cookies
+        await saveCookies(this.context);
         console.log(`[${this.config.name}] 开始学习...`);
         
         // 获取帖子列表
