@@ -1,47 +1,11 @@
 {
   "daily": [
     {
-      "posts": 30,
-      "replies": 19,
-      "newPosts": 0,
-      "date": "2026-02-14"
-    },
-    {
-      "posts": 70,
-      "replies": 41,
-      "newPosts": 0,
-      "date": "2026-02-15"
-    },
-    {
-      "posts": 5,
-      "replies": 2,
-      "newPosts": 0,
-      "date": "2026-02-16"
-    },
-    {
-      "posts": 0,
-      "replies": 0,
-      "newPosts": 0,
-      "date": "2026-02-17"
-    },
-    {
-      "posts": 15,
-      "replies": 8,
-      "newPosts": 0,
-      "date": "2026-02-22"
-    },
-    {
-      "posts": 15,
-      "replies": 3,
-      "newPosts": 0,
-      "date": "2026-02-23"
-    },
-    {
       "posts": 0,
       "replies": 0,
       "newPosts": 0,
       "date": "2026-02-24"
     }
   ],
-  "lastSync": "2026-02-24T01:01:39.934Z"
+  "lastSync": "2026-02-24T02:01:32.424Z"
 }
